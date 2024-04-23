@@ -103,7 +103,7 @@ public:
     // UI settings
     bool mUseFixedSeed = false;
     bool mUseAlphaTest = true;
-    uint mDepth = 4;
+    uint mDepth = 1;
 
     // Photon mapping settings
     const float mCausticInitRadius = 0.01f; // Initial radius

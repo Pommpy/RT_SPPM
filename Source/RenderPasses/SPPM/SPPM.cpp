@@ -154,7 +154,8 @@ void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& rend
 
     mTracePhotonPass.pProgram->addDefine("USE_IMPORTANCE_SAMPLING", "1");
     mTracePhotonPass.pProgram->addDefine("INFO_TEX_HEIGHT", std::to_string(mPhotonBufferHeight));
-    mTracePhotonPass.pProgram->addDefine("TOTAL_PHOTON_COUNT", std::to_string(256 * 256));
+    const int photonNumX = 256;
+    mTracePhotonPass.pProgram->addDefine("TOTAL_PHOTON_COUNT", std::to_string(photonNumX * photonNumX));
 
     if (!mTracePhotonPass.pVars)
         prepareVars(mTracePhotonPass);
@@ -171,7 +172,7 @@ void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& rend
         var["CB"]["gSpecRoughCutoff"] = 0.5f;
         var["CB"]["gDepth"] = mDepth;
         FALCOR_ASSERT(mpEmissivePowerSampler);
-        //mpEmissivePowerSampler->bindShaderData(var["CB"]["gEmissiveSampler"]);
+        mpEmissivePowerSampler->bindShaderData(var["CB"]["gEmissiveSampler"]);
     }
 
     for (int i = 0; i < 2; i++)
@@ -184,7 +185,7 @@ void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& rend
 
     var["gPhotonCounter"] = mPhotonCounter;
 
-    const uint2 targetDim = uint2(256, 256); // trace 2^18 photons, may store 2^18 * (depth = 4) = 2^20 photons
+    const uint2 targetDim = uint2(photonNumX, photonNumX); // trace 2^18 photons, may store 2^18 * (depth = 4) = 2^20 photons
 
     mpScene->raytrace(pRenderContext, mTracePhotonPass.pProgram.get(), mTracePhotonPass.pVars, uint3(targetDim, 1));
 }
