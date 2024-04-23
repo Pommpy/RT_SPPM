@@ -14,6 +14,7 @@ cbuffer PerFrame
     uint gFrameCount; // Frame count since scene was updated
     float gCausticRadius;
     float gGlobalRadius;
+    uint gSeed;
 }
 
 cbuffer CB
@@ -21,7 +22,6 @@ cbuffer CB
     //float gEmissiveScale; // Scale for the emissive part
     bool gCollectGlobalPhotons;
     bool gCollectCausticPhotons;
-    uint gSeed;
 };
 
 // inputs
@@ -154,6 +154,10 @@ void rayGen()
     const TriangleHit triangleHit = hit.getTriangleHit();
     VertexData v = gScene.getVertexData(triangleHit);
 
+    // rayData.radiance = gPhotonFlux[1][0].xyz * 100000000;
+    // // rayData.radiance = 1.0;
+    // gPhotonImage[pixel] = float4(rayData.radiance, 1.0);
+    // return;
     // trace a ray from the primary hit to get nearby photon information
     RayDesc rayDesc;
     rayDesc.Origin = v.posW;

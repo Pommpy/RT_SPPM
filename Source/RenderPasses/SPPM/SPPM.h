@@ -103,7 +103,7 @@ public:
     // UI settings
     bool mUseFixedSeed = false;
     bool mUseAlphaTest = true;
-    uint mDepth = 1;
+    uint mDepth = 4;
 
     // Photon mapping settings
     const float mCausticInitRadius = 0.01f; // Initial radius
@@ -115,8 +115,8 @@ public:
     bool mResizePhotonBuffer = true; 
     bool mRebuildAS = true;
     bool mCreateBuffer = true; // need to create buffers at frame 0
-    uint mPhotonBufferWidth = 512;
-    uint mPhotonBufferHeight = 512; // which means we store 1024 * 1024 = 2^20 total photons each iteration, this value can be updated through GUI
+    uint mPhotonBufferWidth = 1024;
+    uint mPhotonBufferHeight = 1024; // which means we store 1024 * 1024 = 2^20 total photons each iteration, this value can be updated through GUI
     uint32_t mCausticPhotonCount = 0;
     uint32_t mGlobalPhotonCount = 0;
 

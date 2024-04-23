@@ -17,16 +17,16 @@ cbuffer PerFrame
     uint gFrameCount; // Frame count since scene was updated
     float gCausticRadius;
     float gGlobalRadius;
+    uint gSeed;
 }
 
 // For light sampling
+EmissivePowerSampler gEmissiveSampler;
 cbuffer CB
 {
     uint gDepth; // max photon depth
     bool gUseAlphaTest;
     float gSpecRoughCutoff;    // used to decide whether the material is rough enough
-    uint gSeed;
-    EmissivePowerSampler gEmissiveSampler;
 }
 struct PhotonInfo
 {
@@ -73,6 +73,12 @@ struct RayData
     }
 }
 
+float3 toGlobal(float3 localDir, float3 N)
+{
+    float3 B = perp_stark(N);
+    float3 T = cross(B, N);
+    return B * localDir.x + T * localDir.y + N * localDir.z;
+}
 bool SampleLight(out MyLightSample ls, inout SampleGenerator sg)
 {
     // We are using power sampler (i.e., sampling lights based on their flux)
@@ -96,20 +102,22 @@ bool SampleLight(out MyLightSample ls, inout SampleGenerator sg)
     // Sample the triangle uniformly.
     const float3 barycentrics = sample_triangle(u);
     float3 pos = tri.getPosition(barycentrics);
+    float3 normal = tri.normal;
     float posPdf = tri.area;
 
     // after getting the position, we need to sample the direction
     float2 v = sampleNext2D(sg);
-    float3 dir;
+    float3 localDir;
     float dirPdf;
-    dir = sample_cosine_hemisphere_concentric(v, dirPdf);
+    localDir = sample_cosine_hemisphere_concentric(v, dirPdf);
+    float3 dir = toGlobal(localDir, normal);
 
     float samplePdf = triangleSelectionPdf * posPdf * dirPdf;
     ls.pos = pos;
     ls.dir = dir;
     float2 uv = tri.getTexCoord(barycentrics);
-    ls.thp = gScene.materials.evalEmissive(tri.materialID, uv);
-    ls.thp /= samplePdf;
+    ls.thp = gScene.materials.evalEmissive(tri.materialID, uv) * 100;
+    //ls.thp /= samplePdf;
 
     return true;
 }
@@ -230,7 +238,7 @@ void tracePhoton(inout RayData rayData)
         AABB photonAABB = AABB(rayData.origin - radius, rayData.origin + radius);
         InterlockedAdd(gPhotonCounter[insertIndex], 1u, photonIndex);
         uint2 index2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
-        gPhotonFlux[insertIndex][index2D] = float4(rayData.thp / kTotalPhoton, 1.0);
+        gPhotonFlux[insertIndex][index2D] = float4(rayData.thp, 1.0);
         gPhotonDir[insertIndex][index2D] = float4(rayData.direction, 1.0);
         gPhotonAABB[insertIndex][photonIndex] = photonAABB;
         if (i == 0)
@@ -261,5 +269,16 @@ void rayGen()
         rayData.direction = ls.dir;
         tracePhoton(rayData);
     }
+
+    // check whether light sampling succeeded
+    // if(success)
+    // {
+    //     uint photonIndex = 0;
+    //     InterlockedAdd(gPhotonCounter[0], 1u, photonIndex);
+    //     uint2 index2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
+    //     gPhotonFlux[0][index2D] = float4(ls.thp, 1.0);
+    //     //gPhotonFlux[0][index2D] = 1;
+    // }
+    
 }
 

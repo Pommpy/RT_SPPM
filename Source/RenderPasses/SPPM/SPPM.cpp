@@ -154,7 +154,7 @@ void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& rend
 
     mTracePhotonPass.pProgram->addDefine("USE_IMPORTANCE_SAMPLING", "1");
     mTracePhotonPass.pProgram->addDefine("INFO_TEX_HEIGHT", std::to_string(mPhotonBufferHeight));
-    const int photonNumX = 256;
+    const int photonNumX = 512;
     mTracePhotonPass.pProgram->addDefine("TOTAL_PHOTON_COUNT", std::to_string(photonNumX * photonNumX));
 
     if (!mTracePhotonPass.pVars)
@@ -165,19 +165,21 @@ void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& rend
     var["PerFrame"]["gFrameCount"] = mFrameCount;
     var["PerFrame"]["gGlobalRadius"] = mGlobalRadius;
     var["PerFrame"]["gCausticRadius"] = mCausticInitRadius;
+    var["PerFrame"]["gSeed"] = mUseFixedSeed ? 0 : mFrameCount;
     if (mResetCB)
-    {
-        var["CB"]["gSeed"] = mUseFixedSeed ? 0 : mFrameCount;
+    {  
         var["CB"]["gUseAlphaTest"] = mUseAlphaTest;
         var["CB"]["gSpecRoughCutoff"] = 0.5f;
         var["CB"]["gDepth"] = mDepth;
-        FALCOR_ASSERT(mpEmissivePowerSampler);
-        mpEmissivePowerSampler->bindShaderData(var["CB"]["gEmissiveSampler"]);
     }
+    FALCOR_ASSERT(mpEmissivePowerSampler);
+    mpEmissivePowerSampler->bindShaderData(var["gEmissiveSampler"]);
 
     for (int i = 0; i < 2; i++)
     {
         auto& buffer = (i == 0) ? mCausticPhotonBuffers : mGlobalPhotonBuffers;
+        pRenderContext->uavBarrier(buffer.flux.get());
+        pRenderContext->uavBarrier(buffer.dir.get());
         var["gPhotonAABB"][i] = buffer.aabbs;
         var["gPhotonFlux"][i] = buffer.flux;
         var["gPhotonDir"][i] = buffer.dir;
@@ -207,9 +209,9 @@ void SPPM::collectPhotonPass(RenderContext* pRenderContext, const RenderData& re
     var["PerFrame"]["gFrameCount"] = mFrameCount;
     var["PerFrame"]["gCausticRadius"] = mCausticRadius;
     var["PerFrame"]["gGlobalRadius"] = mGlobalRadius;
+    var["PerFrame"]["gSeed"] = mUseFixedSeed ? 0 : mFrameCount;
     if (mResetCB)
     {
-        var["CB"]["gSeed"] = mUseFixedSeed ? 0 : mFrameCount;
         var["CB"]["gCollectGlobalPhotons"] = true;
         var["CB"]["gCollectCausticPhotons"] = true;
     }
@@ -227,6 +229,15 @@ void SPPM::collectPhotonPass(RenderContext* pRenderContext, const RenderData& re
         bind(channel);
 
     var["gPhotonAS"].setAccelerationStructure(mTlasInfo.falcorTlas);
+    for (int i = 0; i < 2; i++)
+    {
+        auto& buffer = (i == 0) ? mCausticPhotonBuffers : mGlobalPhotonBuffers;
+        pRenderContext->uavBarrier(buffer.flux.get());
+        pRenderContext->uavBarrier(buffer.dir.get());
+        var["gPhotonAABB"][i] = buffer.aabbs;
+        var["gPhotonFlux"][i] = buffer.flux;
+        var["gPhotonDir"][i] = buffer.dir;
+    }
 
     const uint2 targetDim = renderData.getDefaultTextureDims();
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
