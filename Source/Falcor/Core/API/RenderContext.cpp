@@ -620,7 +620,7 @@ void RenderContext::buildAccelerationStructure(
     buildDesc.scratchData = desc.scratchData;
     buildDesc.source = desc.source ? desc.source->getGfxAccelerationStructure() : nullptr;
     buildDesc.inputs = translator.translate(desc.inputs);
-
+    int a = 1;
     std::vector<gfx::AccelerationStructureQueryDesc> queryDescs(postBuildInfoCount);
     for (uint32_t i = 0; i < postBuildInfoCount; i++)
     {

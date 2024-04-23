@@ -103,6 +103,7 @@ void Program::validateEntryPoints() const
         {
             if (!entryPointNamesAndTypes.insert(NameTypePair(e.exportName, e.type)).second)
             {
+                assert(false);
                 logWarning("Duplicate program entry points '{}' of type '{}'.", e.exportName, e.type);
             }
         }

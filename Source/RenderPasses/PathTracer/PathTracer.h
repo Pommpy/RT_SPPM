@@ -168,7 +168,7 @@ private:
 
     ref<ParameterBlock>             mpPathTracerBlock;          ///< Parameter block for the path tracer.
 
-    bool                            mRecompile = false;         ///< Set to true when program specialization has changed.
+    bool                            mRecompile = false;         ///< Set to true whenrt program specialization has changed.
     bool                            mVarsChanged = true;        ///< This is set to true whenever the program vars have changed and resources need to be rebound.
     bool                            mOptionsChanged = false;    ///< True if the config has changed since last frame.
     bool                            mGBufferAdjustShadingNormals = false; ///< True if GBuffer/VBuffer has adjusted shading normals enabled.
