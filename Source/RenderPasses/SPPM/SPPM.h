@@ -88,6 +88,7 @@ public:
     void buildBLAS(RenderContext* pRenderContext, PhotonBuffers& photonBuffers);
     void buildTLAS(RenderContext* pRenderContext);
     void collectPhotonPass(RenderContext* pRenderContext, const RenderData& renderData);
+    void showASPass(RenderContext* pRenderContext, const RenderData& renderData);
     void resetSPPM();
     void prepareVars(SubPass& pass);
 
@@ -115,8 +116,8 @@ public:
     bool mResizePhotonBuffer = true; 
     bool mRebuildAS = true;
     bool mCreateBuffer = true; // need to create buffers at frame 0
-    uint mPhotonBufferWidth = 1024;
-    uint mPhotonBufferHeight = 1024; // which means we store 1024 * 1024 = 2^20 total photons each iteration, this value can be updated through GUI
+    uint mPhotonBufferWidth = 2048;
+    uint mPhotonBufferHeight = 2048; // which means we store 1024 * 1024 = 2^20 total photons each iteration, this value can be updated through GUI
     uint32_t mCausticPhotonCount = 0;
     uint32_t mGlobalPhotonCount = 0;
 
@@ -126,12 +127,14 @@ public:
     // Photon Mapping Subpasses
     SubPass mTracePhotonPass;
     SubPass mCollectPhotonPass;
+    SubPass mShowASPass;
 
     // Photon Buffers
     PhotonBuffers mCausticPhotonBuffers;
     PhotonBuffers mGlobalPhotonBuffers;
     ref<Buffer> mPhotonCounter; // used to accumulate photon count in photon generation pass
     ref<Buffer> mPhotonCounterReset;
+    ref<Texture> mSeeds;
     std::vector<RtInstanceDesc> photonInstanceDescs;
     TlasInfo mTlasInfo;
 

@@ -5,6 +5,7 @@ target_sources(SPPM PRIVATE
     SPPM.h
     TracePhoton.rt.slang
     CollectPhoton.rt.slang
+    ShowAS.rt.slang
 )
 
 target_copy_shaders(SPPM RenderPasses/SPPM)

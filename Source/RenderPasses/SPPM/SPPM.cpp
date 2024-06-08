@@ -12,7 +12,8 @@ namespace
 {
 const char kTracePhoton[] = "RenderPasses/SPPM/TracePhoton.rt.slang";
 const char kCollectPhoton[] = "RenderPasses/SPPM/CollectPhoton.rt.slang";
-const uint32_t kMaxPayloadSize = 64u;
+const char kShowAS[] = "RenderPasses/SPPM/ShowAS.rt.slang";
+const uint32_t kMaxPayloadSize = 128u;
 const uint32_t kMaxAttributeSize = 8u;
 const uint32_t kMaxRecursionDepth = 5u;
 
@@ -92,6 +93,7 @@ void SPPM::execute(RenderContext* pRenderContext, const RenderData& renderData)
         if (!mpEmissivePowerSampler)
         {
             mpEmissivePowerSampler = std::make_unique<EmissivePowerSampler>(pRenderContext, mpScene);
+            mpEmissivePowerSampler->update(pRenderContext);
         }
     }
     if (mResizePhotonBuffer)
@@ -117,38 +119,40 @@ void SPPM::execute(RenderContext* pRenderContext, const RenderData& renderData)
         mRebuildAS = false;
     }
 
+    //mpEmissivePowerSampler->update(pRenderContext);
     tracePhotonPass(pRenderContext, renderData);
 
     buildBLAS(pRenderContext, mCausticPhotonBuffers);
     buildBLAS(pRenderContext, mGlobalPhotonBuffers);
     buildTLAS(pRenderContext);
 
+    //showASPass(pRenderContext, renderData);
     collectPhotonPass(pRenderContext, renderData); // after building AS for photons, we can start camera tracing
     mFrameCount++;
 
     // update photon radius
     float itF = static_cast<float>(mFrameCount);
-    mGlobalRadius *= sqrt((itF + mSPPMAlpha) / (itF + 1.0f));
-    mCausticRadius *= sqrt((itF + mSPPMAlpha) / (itF + 1.0f));
-    //Clamp to min radius
-    mGlobalRadius = std::max(mGlobalRadius, kMinPhotonRadius);
-    mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
+    //mGlobalRadius *= sqrt((itF + mSPPMAlpha) / (itF + 1.0f));
+    //mCausticRadius *= sqrt((itF + mSPPMAlpha) / (itF + 1.0f));
+    ////Clamp to min radius
+    //mGlobalRadius = std::max(mGlobalRadius, kMinPhotonRadius);
+    //mCausticRadius = std::max(mCausticRadius, kMinPhotonRadius);
     if (mResetCB) mResetCB = false;
 }
 
 void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& renderData)
 {
     FALCOR_PROFILE(pRenderContext, "tracePass");
+    auto defines = mpEmissivePowerSampler->getDefines();
+    mTracePhotonPass.pProgram->addDefines(defines);
 
     // Reset photon count buffer
     pRenderContext->copyBufferRegion(mPhotonCounter.get(), 0, mPhotonCounterReset.get(), 0, sizeof(uint64_t));
     pRenderContext->resourceBarrier(mPhotonCounter.get(), Resource::State::ShaderResource);
 
     // Clear photon buffers
-    pRenderContext->clearUAV(mGlobalPhotonBuffers.aabbs.get()->getUAV().get(), uint4(0, 0, 0, 0));
     pRenderContext->clearTexture(mGlobalPhotonBuffers.flux.get());
     pRenderContext->clearTexture(mGlobalPhotonBuffers.dir.get());
-    pRenderContext->clearUAV(mCausticPhotonBuffers.aabbs.get()->getUAV().get(), uint4(0, 0, 0, 0));
     pRenderContext->clearTexture(mCausticPhotonBuffers.flux.get());
     pRenderContext->clearTexture(mCausticPhotonBuffers.dir.get());
 
@@ -166,10 +170,12 @@ void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& rend
     var["PerFrame"]["gGlobalRadius"] = mGlobalRadius;
     var["PerFrame"]["gCausticRadius"] = mCausticInitRadius;
     var["PerFrame"]["gSeed"] = mUseFixedSeed ? 0 : mFrameCount;
+    var["gSeeds"] = mSeeds;
+    //var["PerFrame"]["gSeed"] = 0;
     if (mResetCB)
     {  
         var["CB"]["gUseAlphaTest"] = mUseAlphaTest;
-        var["CB"]["gSpecRoughCutoff"] = 0.5f;
+        var["CB"]["gSpecRoughCutoff"] = 0.55f;
         var["CB"]["gDepth"] = mDepth;
     }
     FALCOR_ASSERT(mpEmissivePowerSampler);
@@ -177,19 +183,30 @@ void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& rend
 
     for (int i = 0; i < 2; i++)
     {
-        auto& buffer = (i == 0) ? mCausticPhotonBuffers : mGlobalPhotonBuffers;
-        pRenderContext->uavBarrier(buffer.flux.get());
-        pRenderContext->uavBarrier(buffer.dir.get());
-        var["gPhotonAABB"][i] = buffer.aabbs;
-        var["gPhotonFlux"][i] = buffer.flux;
-        var["gPhotonDir"][i] = buffer.dir;
+        auto& buffers = (i == 0) ? mCausticPhotonBuffers : mGlobalPhotonBuffers;
+        pRenderContext->resourceBarrier(buffers.aabbs.get(), Resource::State::UnorderedAccess);
+        var["gPhotonAABB"][i] = buffers.aabbs;
+        var["gPhotonFlux"][i] = buffers.flux;
+        var["gPhotonDir"][i] = buffers.dir;
     }
 
     var["gPhotonCounter"] = mPhotonCounter;
+    var["gPhotonImage"] = renderData.getTexture("PhotonImage");
 
     const uint2 targetDim = uint2(photonNumX, photonNumX); // trace 2^18 photons, may store 2^18 * (depth = 4) = 2^20 photons
 
+    FALCOR_ASSERT(pRenderContext && mTracePhotonPass.pProgram && mTracePhotonPass.pVars);
     mpScene->raytrace(pRenderContext, mTracePhotonPass.pProgram.get(), mTracePhotonPass.pVars, uint3(targetDim, 1));
+
+    for (int i = 0; i < 2; i++)
+    {
+        auto& buffers = (i == 0) ? mCausticPhotonBuffers : mGlobalPhotonBuffers;
+        pRenderContext->uavBarrier(buffers.aabbs.get());
+        pRenderContext->uavBarrier(buffers.dir.get());
+        pRenderContext->uavBarrier(buffers.flux.get());
+    }
+    pRenderContext->resourceBarrier(mCausticPhotonBuffers.aabbs.get(), Resource::State::NonPixelShader);
+    pRenderContext->resourceBarrier(mGlobalPhotonBuffers.aabbs.get(), Resource::State::NonPixelShader);
 }
 
 void SPPM::collectPhotonPass(RenderContext* pRenderContext, const RenderData& renderData)
@@ -244,6 +261,43 @@ void SPPM::collectPhotonPass(RenderContext* pRenderContext, const RenderData& re
 
     FALCOR_ASSERT(pRenderContext && mCollectPhotonPass.pProgram && mCollectPhotonPass.pVars);
     mpScene->raytrace(pRenderContext, mCollectPhotonPass.pProgram.get(), mCollectPhotonPass.pVars, uint3(targetDim, 1));
+}
+
+void SPPM::showASPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "showASPass");
+    mShowASPass.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
+    mShowASPass.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+
+    if (!mShowASPass.pVars)
+        prepareVars(mShowASPass);
+
+    auto var = mShowASPass.pVars->getRootVar();
+    var["PerFrame"]["gGlobalRadius"] = mGlobalRadius;
+    var["PerFrame"]["gCausticRadius"] = mCausticInitRadius;
+    var["PerFrame"]["gCamPos"] = mpScene->getCamera()->getPosition();
+
+    float3 cameraPos = mpScene->getCamera()->getPosition();
+    printf("%.3lf %.3lf %.3lf\n", cameraPos.x, cameraPos.y, cameraPos.z);
+
+    // input
+    var["gVBuffer"] = renderData.getTexture("vbuffer");
+    var["gViewWorld"] = renderData.getTexture("viewW");
+
+    // output
+    var["gPhotonImage"] = renderData.getTexture("PhotonImage");
+
+    var["gPhotonAS"].setAccelerationStructure(mTlasInfo.falcorTlas);
+    for (int i = 0; i < 2; i++)
+    {
+        auto& buffers = (i == 0) ? mCausticPhotonBuffers : mGlobalPhotonBuffers;
+        var["gPhotonAABB"][i] = buffers.aabbs;
+    }
+    const uint2 targetDim = renderData.getDefaultTextureDims();
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+
+    mpScene->raytrace(pRenderContext, mShowASPass.pProgram.get(), mShowASPass.pVars, uint3(targetDim, 1));
+
 }
 
 void SPPM::buildBLAS(RenderContext* pRenderContext, PhotonBuffers& photonBuffers)
@@ -320,7 +374,7 @@ void SPPM::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
             {
                 sbt->setHitGroup(0, mpScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit", "anyHit"));
             }
-            mTracePhotonPass.pProgram = Program::create(mpDevice, desc, mpScene->getSceneDefines());
+            mTracePhotonPass.pProgram = Program::create(mpDevice, desc, mpScene->getSceneDefines());       
         }
         {
             // photon collect program
@@ -337,10 +391,33 @@ void SPPM::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 
             // No closest shader (because we are using photons for primary rays, No final gather now)
             // We only need intersection shader to do ray-sphere intersection and anyhit shader to accumulate flux
-            sbt->setHitGroup(0, 0 /*why is it 0 here*/, desc.addHitGroup("", "anyHit", "intersection"));
+            sbt->setHitGroup(0, 0, desc.addHitGroup("", "anyHit", "intersection"));
             mCollectPhotonPass.pProgram = Program::create(mpDevice, desc, mpScene->getSceneDefines());
         }
+        {
+            // show AS program
+            ProgramDesc desc;
+            desc.addShaderModules(mpScene->getShaderModules());
+            desc.addShaderLibrary(kShowAS);
+            desc.setMaxAttributeSize(kMaxAttributeSize);
+            desc.setMaxPayloadSize(16);
+            desc.setMaxTraceRecursionDepth(2);
+            mShowASPass.pBindingTable = RtBindingTable::create(1, 1, mpScene->getGeometryCount());
+            auto& sbt = mShowASPass.pBindingTable;
+            sbt->setRayGen(desc.addRayGen("rayGen"));
+            sbt->setMiss(0, desc.addMiss("miss"));
+            sbt->setHitGroup(0, 0, desc.addHitGroup("photonASClosestHit", "", "intersection"));
+            sbt->setHitGroup(0, 1, desc.addHitGroup("triangleClosestHit", "", ""));
+            mShowASPass.pProgram = Program::create(mpDevice, desc, mpScene->getSceneDefines());
+        }
     }
+
+    // create seed buffer
+    std::seed_seq seq{ time(0) };
+    std::vector<uint32_t> cpuSeeds(mPhotonBufferWidth * mPhotonBufferHeight);
+    seq.generate(cpuSeeds.begin(), cpuSeeds.end());
+    mSeeds = mpDevice->createTexture2D(mPhotonBufferWidth, mPhotonBufferHeight, ResourceFormat::R32Uint, 1, 1, cpuSeeds.data());
+    
     mPhotonCounter = mpDevice->createStructuredBuffer(sizeof(uint), 2);
     uint64_t zero = 0;
     mPhotonCounterReset = mpDevice->createBuffer(sizeof(uint64_t), ResourceBindFlags::None, MemoryType::DeviceLocal, &zero);
@@ -391,7 +468,7 @@ void SPPM::prepareTLAS(RenderContext* pRenderContext)
 {
     {
         RtInstanceDesc causticDesc = {};
-        causticDesc.accelerationStructure = mGlobalPhotonBuffers.blasBuffer->getGpuAddress();
+        causticDesc.accelerationStructure = mCausticPhotonBuffers.blasBuffer->getGpuAddress();
         causticDesc.flags = RtGeometryInstanceFlags::None;
         causticDesc.instanceID = 0;
         causticDesc.instanceMask = 1;
@@ -447,6 +524,7 @@ void SPPM::prepareBLAS(PhotonBuffers& photonBuffers)
     inputs.descCount = 1;
     inputs.geometryDescs = &desc;
     inputs.flags = RtAccelerationStructureBuildFlags::PreferFastBuild; // Because we always need to enumerate all leaves, we choose fast build (maybe LBVH?)
+    
 
     blasInfo.prebuildInfo = RtAccelerationStructure::getPrebuildInfo(mpDevice.get(), inputs);
     FALCOR_ASSERT(blasInfo.prebuildInfo.resultDataMaxSize > 0);

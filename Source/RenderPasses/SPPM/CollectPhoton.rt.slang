@@ -94,6 +94,12 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const flo
 [shader("anyhit")]
 void anyHit(inout RayData rayData, SphereAttribs attribs)
 {
+    // if(InstanceIndex() == 0)
+    //     rayData.radiance += float3(1.0, 0.3, 0.3);
+    // else
+    //     rayData.radiance += float3(0.0, 0.0, 0.0);
+    // return;
+
     // We find a valid photon contribute to this ray
     // Accumulate photon contribution here
     const uint primIndex = PrimitiveIndex();
@@ -107,20 +113,25 @@ void anyHit(inout RayData rayData, SphereAttribs attribs)
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod); // This stage may be costly
     let mi = gScene.materials.getMaterialInstance(sd, lod);
-    float3 bsdfValue = mi.eval(sd, photonDir, rayData.sg); // bsdf * cos(n, photonDir)
+    float3 bsdfValue = mi.eval(sd, -photonDir, rayData.sg); // bsdf * cos(n, photonDir)
 
     float3 photonContribution = photonFlux * bsdfValue;
+
+    // rayData.radiance++;
     rayData.radiance += photonContribution;
 }
 
 [shader("intersection")]
 void intersection()
 {
-    const float3 origin = ObjectRayOrigin();
+    // SphereAttribs attribs;
+    // ReportHit(RayTCurrent(), 0, attribs);
+    // return;
+    const float3 origin = WorldRayOrigin();
     const uint primIndex = PrimitiveIndex();
 
     AABB photonAABB = gPhotonAABB[InstanceIndex()][PrimitiveIndex()];
-    float radius = InstanceIndex() == 0? gGlobalRadius: gCausticRadius;
+    float radius = InstanceIndex() == 0 ? gCausticRadius: gGlobalRadius;
     float3 center = photonAABB.center();
 
     float3 dis = origin - center;
@@ -145,8 +156,7 @@ void rayGen()
     uint2 pixel = DispatchRaysIndex().xy;
     uint2 frameDim = DispatchRaysDimensions().xy;
     SampleGenerator sg = SampleGenerator(pixel, gSeed);
-    RayData rayData = RayData(sg);
-    rayData.packedHitInfo = gVBuffer[pixel];
+    
     float3 outColor = float3(0.f);
 
     const HitInfo hit = HitInfo(gVBuffer[pixel]);
@@ -161,22 +171,32 @@ void rayGen()
     // trace a ray from the primary hit to get nearby photon information
     RayDesc rayDesc;
     rayDesc.Origin = v.posW;
-    rayDesc.Direction = gViewWorld[pixel].xyz;
+    rayDesc.Direction = -gViewWorld[pixel].xyz;
     rayDesc.TMin = 0;
-    rayDesc.TMax = 1e-6;
+    rayDesc.TMax = 1e9;
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
+
+    float3 radiance = 0;
     if (gCollectCausticPhotons && valid)
     {
-        TraceRay(gPhotonAS, rayFlags, 1 /*instance mask for caustic photons*/, 0 /*hitIdx*/, 0, 0, rayDesc, rayData);
+        RayData rayData = RayData(sg);
+        rayData.packedHitInfo = gVBuffer[pixel];
+        TraceRay(gPhotonAS, rayFlags, 1 /*instance mask for caustic photons*/, 0, 0, 0, rayDesc, rayData);
         float w = 1.0 / (M_PI * gCausticRadius * gCausticRadius);
-        rayData.radiance += w * rayData.radiance;
+        radiance += rayData.radiance * w;
+        // radiance += rayData.radiance;
     }
     if (gCollectGlobalPhotons && valid)
     {
-        TraceRay(gPhotonAS, rayFlags, 2 /*instance mask for global photons*/, 0 /*hitIdx*/, 0, 0, rayDesc, rayData);
+        RayData rayData = RayData(sg);
+        rayData.packedHitInfo = gVBuffer[pixel];
+        TraceRay(gPhotonAS, rayFlags, 2 /*instance mask for global photons*/, 0, 0, 0, rayDesc, rayData);
         float w = 1.0 / (M_PI * gGlobalRadius * gGlobalRadius);
-        rayData.radiance += w * rayData.radiance;
+        radiance += rayData.radiance * w;
+        // radiance += rayData.radiance;
     }
+    radiance = radiance / (512 * 512);
+    // radiance = radiance / (radiance + 1);
     //float3 emission = gEmissive[pixel].xyz;
     //rayData.radiance += emission;
 
@@ -186,8 +206,8 @@ void rayGen()
         float3 last = gPhotonImage[pixel].xyz;
         float frameCountf = float(gFrameCount);
         last *= frameCountf;
-        rayData.radiance += last;
-        rayData.radiance /= frameCountf + 1.0;
+        radiance += last;
+        radiance /= frameCountf + 1.0;
     }
-    gPhotonImage[pixel] = float4(rayData.radiance, 1.0);
+    gPhotonImage[pixel] = float4(radiance, 1.0);
 }
