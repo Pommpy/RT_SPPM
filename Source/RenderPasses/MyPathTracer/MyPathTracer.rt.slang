@@ -471,10 +471,6 @@ void rayGen()
     uint2 pixel = DispatchRaysIndex().xy;
     uint2 frameDim = DispatchRaysDimensions().xy;
 
-
-    // 1074 407
-
-    // 1314 518
     float3 color = tracePath(pixel, frameDim);
     gOutputColor[pixel] = float4(color, 1.f);
 }

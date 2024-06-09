@@ -32,6 +32,8 @@ const ChannelList kOutputChannels =
 SPPM::SPPM(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_UNIFORM);
+    mpPixelStats = std::make_unique<PixelStats>(mpDevice);
+    mpPixelDebug = std::make_unique<PixelDebug>(mpDevice);
     // don't need values in the script
     // control the parameters using ImGUI
 }
@@ -169,7 +171,7 @@ void SPPM::tracePhotonPass(RenderContext* pRenderContext, const RenderData& rend
     var["PerFrame"]["gFrameCount"] = mFrameCount;
     var["PerFrame"]["gGlobalRadius"] = mGlobalRadius;
     var["PerFrame"]["gCausticRadius"] = mCausticInitRadius;
-    var["PerFrame"]["gSeed"] = mUseFixedSeed ? 0 : mFrameCount;
+    var["PerFrame"]["gSeed"] = mUseFixedSeed ? mFixedSeed : mFrameCount;
     var["gSeeds"] = mSeeds;
     //var["PerFrame"]["gSeed"] = 0;
     if (mResetCB)
@@ -213,6 +215,14 @@ void SPPM::collectPhotonPass(RenderContext* pRenderContext, const RenderData& re
 {
     FALCOR_PROFILE(pRenderContext, "CollectPass");
 
+    {
+        // Pixel Debug
+        const uint2 targetDim = renderData.getDefaultTextureDims();
+        FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+        mpPixelDebug->beginFrame(pRenderContext, targetDim);
+    }
+    assert(mpPixelDebug);
+
     mCollectPhotonPass.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mCollectPhotonPass.pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
     mCollectPhotonPass.pProgram->addDefine("INFO_TEX_HEIGHT", std::to_string(mPhotonBufferHeight));
@@ -232,6 +242,7 @@ void SPPM::collectPhotonPass(RenderContext* pRenderContext, const RenderData& re
         var["CB"]["gCollectGlobalPhotons"] = true;
         var["CB"]["gCollectCausticPhotons"] = true;
     }
+
     // Bind I/O buffers
     auto bind = [&](const ChannelDesc& desc)
     {
@@ -256,11 +267,15 @@ void SPPM::collectPhotonPass(RenderContext* pRenderContext, const RenderData& re
         var["gPhotonDir"][i] = buffer.dir;
     }
 
+    if (mpPixelDebug) mpPixelDebug->prepareProgram(mCollectPhotonPass.pProgram, var);
+
     const uint2 targetDim = renderData.getDefaultTextureDims();
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
     FALCOR_ASSERT(pRenderContext && mCollectPhotonPass.pProgram && mCollectPhotonPass.pVars);
     mpScene->raytrace(pRenderContext, mCollectPhotonPass.pProgram.get(), mCollectPhotonPass.pVars, uint3(targetDim, 1));
+
+    if (mpPixelDebug) mpPixelDebug->endFrame(pRenderContext);
 }
 
 void SPPM::showASPass(RenderContext* pRenderContext, const RenderData& renderData)
@@ -424,7 +439,26 @@ void SPPM::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 }
 void SPPM::renderUI(Gui::Widgets& widget)
 {
+    // render debug UI
+    bool dirty = false;
 
+    dirty |= widget.var("Photon Bounces", mDepth, 0u, 1u << 16);
+
+    if (auto g = widget.group("Debugging"))
+    {
+        dirty |= g.checkbox("Use fixed seed", mUseFixedSeed);
+        g.tooltip("Forces a fixed random seed for each frame.\n\n"
+            "This should produce exactly the same image each frame, which can be useful for debugging.");
+        if (mUseFixedSeed)
+        {
+            dirty |= g.var("Seed", mFixedSeed);
+        }
+        mpPixelDebug->renderUI(g);
+    }
+    if (dirty)
+    {
+        mOptionChanged = true;
+    }
 }
 
 void SPPM::resetSPPM()

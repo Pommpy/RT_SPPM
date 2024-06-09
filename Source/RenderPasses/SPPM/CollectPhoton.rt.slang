@@ -8,6 +8,7 @@ import Utils.Sampling.SampleGenerator;
 import Scene.Material.ShadingUtils;
 //import Experimental.Scene.Material.MaterialHelpers;
 import Rendering.Lights.LightHelpers;
+import Utils.Debug.PixelDebug;
 
 cbuffer PerFrame
 {

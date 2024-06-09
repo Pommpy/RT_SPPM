@@ -78,7 +78,6 @@ public:
     }
     void recordTimer();
 
-
     // Functions for photon mapping
     void preparePhotonBuffers(PhotonBuffers& photonBuffers);
     void preparePhotonTextures(PhotonBuffers& photonBuffers);
@@ -103,6 +102,7 @@ public:
 
     // UI settings
     bool mUseFixedSeed = false;
+    uint mFixedSeed = 0;
     bool mUseAlphaTest = true;
     uint mDepth = 4;
 
@@ -140,7 +140,12 @@ public:
 
     ref<SampleGenerator> mpSampleGenerator;
     std::unique_ptr<EmissivePowerSampler> mpEmissivePowerSampler; // Sample emissive lights based on their flux
+
+    std::unique_ptr<PixelStats> mpPixelStats; // collecting pixel stats
+    std::unique_ptr<PixelDebug> mpPixelDebug; // print in shaders
+
     // TO DO:
+    // Pixel Debug
     // UI Control:
     // Photon Number, BLAS Build
 };

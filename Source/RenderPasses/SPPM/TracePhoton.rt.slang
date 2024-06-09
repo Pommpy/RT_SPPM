@@ -249,7 +249,7 @@ void closestHit(inout RayData rayData, BuiltInTriangleIntersectionAttributes att
 
 void tracePhoton(inout RayData rayData)
 {
-    for (int i = 0; i < 1 && i < gDepth && !rayData.terminated; i++)
+    for (int i = 0; i < gDepth && !rayData.terminated; i++)
     {
         RayDesc rayDesc;
         rayDesc.Origin = rayData.origin;

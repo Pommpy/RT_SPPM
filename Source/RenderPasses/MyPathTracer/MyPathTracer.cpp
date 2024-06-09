@@ -28,8 +28,6 @@ const ChannelList kInputChannels =
 {
     {"vbuffer",             "gVBuffer",                 "V Buffer to get the intersected triangle",         false},
     {"viewW",               "gViewWorld",               "World View Direction",                             false},
-    // {"thp",                 "gThp",                     "Throughput",                                       true},
-    // {"emissive",            "gEmissive",                "Emissive",                                         true},
 };
 
 const ChannelList kOutputChannels =
