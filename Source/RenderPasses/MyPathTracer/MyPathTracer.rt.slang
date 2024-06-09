@@ -23,13 +23,13 @@ cbuffer CB
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
-Texture2D<float4> gViewW;
+Texture2D<float4> gViewWorld;
 
 RWTexture2D<float4> gOutputColor;
 
 static EmissiveUniformSampler emissiveLightSampler;
 
-#define is_valid(name) (is_valid_##name != 0)
+// #define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
@@ -123,14 +123,14 @@ void setupPathLogging(const ScatterRayData rayData)
 
 float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
 {
-    if (is_valid(gViewW))
+    // if (is_valid(gViewWorld))
     {
-        return -gViewW[launchIndex].xyz;
+        return -gViewWorld[launchIndex].xyz;
     }
-    else
-    {
-        return camera.computeRayPinhole(launchIndex, launchDim).dir;
-    }
+    // else
+    // {
+    //     return camera.computeRayPinhole(launchIndex, launchDim).dir;
+    // }
 }
 
 bool traceShadowRay(float3 origin, float3 dir, float distance)
@@ -467,6 +467,7 @@ void shadowTriangleMeshAnyHit(inout ShadowRayData rayData, BuiltInTriangleInters
 [shader("raygeneration")]
 void rayGen()
 {
+    // return;
     uint2 pixel = DispatchRaysIndex().xy;
     uint2 frameDim = DispatchRaysDimensions().xy;
 

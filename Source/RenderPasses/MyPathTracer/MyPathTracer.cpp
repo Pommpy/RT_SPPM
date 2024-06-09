@@ -28,13 +28,13 @@ const ChannelList kInputChannels =
 {
     {"vbuffer",             "gVBuffer",                 "V Buffer to get the intersected triangle",         false},
     {"viewW",               "gViewWorld",               "World View Direction",                             false},
-    {"thp",                 "gThp",                     "Throughput",                                       false},
-    {"emissive",            "gEmissive",                "Emissive",                                         false},
+    // {"thp",                 "gThp",                     "Throughput",                                       true},
+    // {"emissive",            "gEmissive",                "Emissive",                                         true},
 };
 
 const ChannelList kOutputChannels =
 {
-    { "PhotonImage",          "gPhotonImage",               "An image that shows the caustics and indirect light from global photons" , false , ResourceFormat::RGBA32Float }
+    { "color",          "gOutputColor",               "My Path Tracer output" , false , ResourceFormat::RGBA32Float }
 };
 
 const char kMaxBounces[] = "maxBounces";
