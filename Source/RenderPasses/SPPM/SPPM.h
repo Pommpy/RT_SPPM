@@ -40,11 +40,24 @@ struct TlasInfo
     ref<Buffer> pScratch;
     ref<RtAccelerationStructure> falcorTlas;
 };
+struct PhotonInfo
+{
+    float3 flux;
+    float3 dir;
+};
+
+struct PhotonCounter {
+    ref<Buffer> counter;
+    ref<Buffer> reset;
+    ref<Buffer> cpuReadback;
+};
+
 struct PhotonBuffers
 {
-    uint size;
-    ref<Texture> flux;
-    ref<Texture> dir;
+    uint maxPhotonCount;
+    ref<Buffer> photonInfo; // packed flux and dir
+    // ref<Texture> flux;
+    // ref<Texture> dir;
     ref<Buffer> aabbs; // aabb structured buffer built within photon trace pass, used for building blas
     ref<Buffer> blasScratch;
     ref<Buffer> blasBuffer;
@@ -80,7 +93,7 @@ public:
 
     // Functions for photon mapping
     void preparePhotonBuffers(PhotonBuffers& photonBuffers);
-    void preparePhotonTextures(PhotonBuffers& photonBuffers);
+    void resetPhotonCounter(RenderContext* pRenderContext);
     void prepareBLAS(PhotonBuffers& photonBuffers);
     void prepareTLAS(RenderContext* pRenderContext);
     void tracePhotonPass(RenderContext* pRenderContext, const RenderData& renderData);
@@ -105,21 +118,28 @@ public:
     uint mFixedSeed = 0;
     bool mUseAlphaTest = true;
     uint mDepth = 4;
+    uint photonNumX = 512;
+    bool numPhotonChanged = true; // for the fisrt frame
 
     // Photon mapping settings
     const float mCausticInitRadius = 0.01f; // Initial radius
     const float mGlobalInitRadius = 0.05f;
     const float mSPPMAlpha = 0.7f;
     const float kMinPhotonRadius = 0.00001f;
-    float mCausticRadius = 0.01f; // current radius
-    float mGlobalRadius = 0.05f;
+    float mCausticRadius = 0.005f; // current radius
+    float mGlobalRadius = 0.01f;
     bool mResizePhotonBuffer = true; 
     bool mRebuildAS = true;
     bool mCreateBuffer = true; // need to create buffers at frame 0
-    uint mPhotonBufferWidth = 2048;
-    uint mPhotonBufferHeight = 2048; // which means we store 1024 * 1024 = 2^20 total photons each iteration, this value can be updated through GUI
-    uint32_t mCausticPhotonCount = 0;
-    uint32_t mGlobalPhotonCount = 0;
+
+    bool updateMaxPhotonCount = false;
+    uint mMaxPhotonCount = 1024;
+
+    float photonASScale = 1.1f;
+    std::vector<uint32_t> mPhotonCounts = { 1, 1 };
+    std::vector<uint32_t> mPhotonASSizes = { 1, 1 };
+
+    bool enableCollect = true;
 
     // Timer
     Timer mTimer;
@@ -132,8 +152,10 @@ public:
     // Photon Buffers
     PhotonBuffers mCausticPhotonBuffers;
     PhotonBuffers mGlobalPhotonBuffers;
-    ref<Buffer> mPhotonCounter; // used to accumulate photon count in photon generation pass
-    ref<Buffer> mPhotonCounterReset;
+    PhotonCounter mPhotonCounter;
+
+    // ref<Buffer> mPhotonCounter; // used to accumulate photon count in photon generation pass
+    // ref<Buffer> mPhotonCounterReset;
     ref<Texture> mSeeds;
     std::vector<RtInstanceDesc> photonInstanceDescs;
     TlasInfo mTlasInfo;

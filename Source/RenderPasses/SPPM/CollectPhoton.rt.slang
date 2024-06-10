@@ -35,17 +35,18 @@ RWTexture2D<float4> gPhotonImage;
 // Helper Structs
 struct PhotonInfo
 {
-    float4 dir;
-    float4 flux;
+    float3 flux;
+    float3 dir;
 };
 // Photon Buffers
-Texture2D<float4> gPhotonFlux[2];
-Texture2D<float4> gPhotonDir[2];
+
+StructuredBuffer<PhotonInfo> gPhotonInfo[2];
+// Texture2D<float4> gPhotonFlux[2];
+// Texture2D<float4> gPhotonDir[2];
 StructuredBuffer<AABB> gPhotonAABB[2];
 RaytracingAccelerationStructure gPhotonAS;
 
 #define is_valid(name) (is_valid_##name != 0)
-static const uint kInfoTexHeight = INFO_TEX_HEIGHT;
 static const float kRayTMax = FLT_MAX;
 
 struct RayData // Ray payload
@@ -71,42 +72,25 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const flo
 {
     VertexData v = {};
     uint materialID = {};
-
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
     if (hit.getType() == HitType::Triangle)
     {
         const TriangleHit triangleHit = hit.getTriangleHit();
         v = gScene.getVertexData(triangleHit);
         materialID = gScene.getMaterialID(triangleHit.instanceID);
     }
-#endif
-
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_DISPLACED_TRIANGLE_MESH)
-    if (hit.getType() == HitType::DisplacedTriangle)
-    {
-        const DisplacedTriangleHit displacedTriangleHit = hit.getDisplacedTriangleHit();
-        v = gScene.getVertexData(displacedTriangleHit, -rayDir);
-        materialID = gScene.getMaterialID(displacedTriangleHit.instanceID);
-    }
-#endif
     ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
     return sd;
 }
 [shader("anyhit")]
 void anyHit(inout RayData rayData, SphereAttribs attribs)
 {
-    // if(InstanceIndex() == 0)
-    //     rayData.radiance += float3(1.0, 0.3, 0.3);
-    // else
-    //     rayData.radiance += float3(0.0, 0.0, 0.0);
     // return;
-
     // We find a valid photon contribute to this ray
     // Accumulate photon contribution here
     const uint primIndex = PrimitiveIndex();
-    const uint2 primIndex2D = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
-    float3 photonFlux = gPhotonFlux[InstanceIndex()][primIndex2D].xyz;
-    float3 photonDir = gPhotonDir[InstanceIndex()][primIndex2D].xyz;
+    // const uint2 primIndex2D = uint2(primIndex / kInfoTexHeight, primIndex % kInfoTexHeight);
+
+    PhotonInfo photonInfo = gPhotonInfo[InstanceIndex()][primIndex];
 
     const float3 primaryRayOrigin = WorldRayOrigin();
     const float3 primaryRayDir = WorldRayDirection();
@@ -114,21 +98,31 @@ void anyHit(inout RayData rayData, SphereAttribs attribs)
     let lod = ExplicitLodTextureSampler(0.f);
     ShadingData sd = loadShadingData(hit, primaryRayOrigin, primaryRayDir, lod); // This stage may be costly
     let mi = gScene.materials.getMaterialInstance(sd, lod);
-    float3 bsdfValue = mi.eval(sd, -photonDir, rayData.sg); // bsdf * cos(n, photonDir)
-
-    float3 photonContribution = photonFlux * bsdfValue;
+    float3 bsdfValue = mi.eval(sd, -photonInfo.dir, rayData.sg); // bsdf * cos(n, photonDir)
 
     // rayData.radiance++;
-    rayData.radiance += photonContribution;
+    rayData.radiance += photonInfo.flux * bsdfValue;
 }
 
 [shader("intersection")]
 void intersection()
 {
+    // return;
     // SphereAttribs attribs;
+    // const float3 origin = WorldRayOrigin();
+    // const uint primIndex = PrimitiveIndex();
+
+    // AABB photonAABB = gPhotonAABB[InstanceIndex()][PrimitiveIndex()];
+    
+    // if(photonAABB.contains(origin))
+    // {
+    //     ReportHit(RayTCurrent(), 0, attribs);
+    // }
+    // return;
+
     // ReportHit(RayTCurrent(), 0, attribs);
     // return;
-    const float3 origin = WorldRayOrigin();
+    const float3 origin = ObjectRayOrigin();
     const uint primIndex = PrimitiveIndex();
 
     AABB photonAABB = gPhotonAABB[InstanceIndex()][PrimitiveIndex()];
@@ -174,29 +168,27 @@ void rayGen()
     rayDesc.Origin = v.posW;
     rayDesc.Direction = -gViewWorld[pixel].xyz;
     rayDesc.TMin = 0;
-    rayDesc.TMax = 1e9;
+    rayDesc.TMax = 1e-6;
     uint rayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
 
     float3 radiance = 0;
-    if (gCollectCausticPhotons && valid)
-    {
-        RayData rayData = RayData(sg);
-        rayData.packedHitInfo = gVBuffer[pixel];
-        TraceRay(gPhotonAS, rayFlags, 1 /*instance mask for caustic photons*/, 0, 0, 0, rayDesc, rayData);
-        float w = 1.0 / (M_PI * gCausticRadius * gCausticRadius);
-        radiance += rayData.radiance * w;
-        // radiance += rayData.radiance;
-    }
+    // if (gCollectCausticPhotons && valid)
+    // {
+    //     RayData rayData = RayData(sg);
+    //     rayData.packedHitInfo = gVBuffer[pixel];
+    //     TraceRay(gPhotonAS, rayFlags, 1 /*instance mask for caustic photons*/, 0, 0, 0, rayDesc, rayData);
+    //     float w = 1.0 / (gCausticRadius * gCausticRadius * 4);
+    //     radiance += rayData.radiance * w;
+    //     // radiance += rayData.radiance;
+    // }
     if (gCollectGlobalPhotons && valid)
     {
         RayData rayData = RayData(sg);
         rayData.packedHitInfo = gVBuffer[pixel];
         TraceRay(gPhotonAS, rayFlags, 2 /*instance mask for global photons*/, 0, 0, 0, rayDesc, rayData);
-        float w = 1.0 / (M_PI * gGlobalRadius * gGlobalRadius);
+        float w = 1.0 / (gGlobalRadius * gGlobalRadius * M_PI);
         radiance += rayData.radiance * w;
-        // radiance += rayData.radiance;
     }
-    radiance = radiance / (512 * 512);
     // radiance = radiance / (radiance + 1);
     //float3 emission = gEmissive[pixel].xyz;
     //rayData.radiance += emission;

@@ -32,7 +32,7 @@ struct PhotonInfo
 {
     float3 flux;
     float3 dir;
-}
+};
 
 
 struct MyLightSample
@@ -40,10 +40,12 @@ struct MyLightSample
     float3 pos;
     float3 dir;
     float3 thp;
-}
+};
 
-RWTexture2D<float4> gPhotonFlux[2]; // 0-caustic, 1-global
-RWTexture2D<float4> gPhotonDir[2];
+RWStructuredBuffer<PhotonInfo> gPhotonInfo[2]; // 0-caustic, 1-global
+
+// RWTexture2D<float4> gPhotonFlux[2]; // 0-caustic, 1-global
+// RWTexture2D<float4> gPhotonDir[2];
 RWStructuredBuffer<AABB> gPhotonAABB[2];
 RWStructuredBuffer<uint> gPhotonCounter; // For all types of photons
 
@@ -54,7 +56,6 @@ Texture2D<uint> gSeeds; // we need a random seed buffer for light sampling
 #define is_valid(name) (is_valid_##name != 0)
 static const float kRayTMax = FLT_MAX;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
-static const uint kInfoTexHeight = INFO_TEX_HEIGHT;
 static const uint kTotalPhoton = TOTAL_PHOTON_COUNT;
 struct RayData
 {
@@ -112,7 +113,7 @@ bool SampleLight(out MyLightSample ls, inout SampleGenerator sg)
     // Sample the triangle uniformly.
     const float3 barycentrics = sample_triangle(u);
     float3 pos = tri.getPosition(barycentrics);
-    float3 normal = tri.normal;
+    float3 normal = normalize(tri.normal);
 
     // after getting the position, we need to sample the direction
     float2 v = sampleNext2D(sg);
@@ -200,9 +201,9 @@ void handleHit(const HitInfo hit, inout RayData rayData)
 
     AABB photonAABB = AABB(v.posW - radius, v.posW + radius);
     InterlockedAdd(gPhotonCounter[insertIndex], 1u, photonIndex);
-    uint2 index2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
-    gPhotonFlux[insertIndex][index2D] = float4(rayData.thp, 1.0);
-    gPhotonDir[insertIndex][index2D] = float4(rayData.direction, 1.0);
+   // uint2 index2D = uint2(photonIndex / kInfoTexHeight, photonIndex % kInfoTexHeight);
+
+    gPhotonInfo[insertIndex][photonIndex] = {rayData.thp, rayData.direction};
     gPhotonAABB[insertIndex][photonIndex] = photonAABB;
 
     // Load Shading data
@@ -296,7 +297,7 @@ void rayGen()
     if(success)
     {
         rayData.origin = ls.pos;
-        rayData.thp = ls.thp;
+        rayData.thp = ls.thp / (frameDim.x * frameDim.y);
         rayData.direction = ls.dir;
         tracePhoton(rayData);
     }
